@@ -1,53 +1,53 @@
-name: Rust
+name: Release
+
+permissions:
+  contents: write
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:  # Added manual trigger support
+    tags:
+      - v[0-9]+.*
+  workflow_dispatch:  # 允许手动触发
 
-jobs:build:
+env:
+  CRATE_NAME: mdbook-epub
+
+jobs:
+  release:
+    name: Build release binary
     runs-on: macos-latest
-    env:
-      EPUBCHECK_PATH: epubcheck
-
     steps:
-      - name: Set up Rust
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install cargo version
-        uses: dtolnay/rust-toolchain@stablewith:
-          targets: aarch64-apple-darwin  # Specify Apple Silicon target
-
-      - name: Set up Java
-        uses: actions/setup-java@v3
+      - name: Cache Cargo
+        uses: actions/cache@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install epubcheck
-        run: brew install epubcheck
-        shell: bash
-
-      - name: Install cargo auditrun: cargo install cargo-audit
-
-      - name: Show rust version
-        run: cargo --version- name: Build
-        run: cargo build --release --verbose --target aarch64-apple-darwin
-
-      - name: Run tests
-        run: cargo test --verbose --target aarch64-apple-darwin -- --include-ignored
-        env:
-          EPUBCHECK_JAR: ${{ env.EPUBCHECK_JAR }}
-
-      - name: Run Clippy
-        run: cargo clippy --target aarch64-apple-darwin -- --no-deps -Dwarnings
-
-      - name: Audit
-        run: cargo audit
-        
-      # New step to upload the compiled binary- name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          name: mdbook-epub-aarch64-apple-darwin
-          path: target/aarch64-apple-darwin/release/mdbook-epub
-          overwrite: true
+          toolchain: stable
+          target: aarch64-apple-darwin
+
+      - name: Build release
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p target/stage
+          cd target/aarch64-apple-darwin/release
+          tar czvf ../../stage/${{ env.CRATE_NAME }}-aarch64-apple-darwin.tar.gz ${{ env.CRATE_NAME }}
+          cd -
+
+      - name: Upload binary to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/stage/${{ env.CRATE_NAME }}-aarch64-apple-darwin.tar.gz
+          asset_name: ${{ env.CRATE_NAME }}-aarch64-apple-darwin.tar.gz
+          tag: ${{ github.ref }}
